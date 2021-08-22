@@ -1,3 +1,23 @@
 .App {
   text-align: center;
 }
+
+.staking-app {
+  box-shadow: 0 0 3px #cccccc;
+  border-radius: 20px;
+  display: inline-block;
+  margin: 40px;
+}
+
+.staking-app .ant-btn {
+  display: block;
+  width: calc(100% - 40px);
+  margin: 0 20px;
+  height: 48px;
+  border-radius: 12px;
+}
+
+.staking-panel {
+  margin: 20px;
+  border-radius: 20px;
+}
