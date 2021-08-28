@@ -14,6 +14,7 @@ import { formatEther, parseEther } from "@ethersproject/units";
 import { Hints, ExampleUI, Subgraph } from "./views"
 import { INFURA_ID, DAI_ADDRESS, DAI_ABI, NETWORK, NETWORKS } from "./constants";
 const humanizeDuration = require("humanize-duration");
+const { utils } = require("ethers");
 /*
     Welcome to 🏗 scaffold-eth !
 
@@ -34,7 +35,7 @@ const humanizeDuration = require("humanize-duration");
 */
 
 /// 📡 What chain are your contracts deployed to?
-const targetNetwork = NETWORKS['localhost']; // <------- select your target frontend network (localhost, rinkeby, xdai, mainnet)
+const targetNetwork = NETWORKS['rinkeby']; // <------- select your target frontend network (localhost, rinkeby, xdai, mainnet)
 
 // 😬 Sorry for all the console logging
 const DEBUG = true
@@ -125,7 +126,6 @@ function App(props) {
   const tokensPerEth = useContractReader(readContracts, "Vendor", "tokensPerEth")
   console.log("🏦 tokensPerEth:", tokensPerEth ? tokensPerEth.toString() : '...')
 
-
   // const complete = useContractReader(readContracts,"ExampleExternalContract", "completed")
   // console.log("✅ complete:",complete)
   //
@@ -210,15 +210,25 @@ function App(props) {
   const buyTokensEvents = useEventListener(readContracts, "Vendor", "BuyTokens", localProvider, 1);
   console.log("📟 buyTokensEvents:",buyTokensEvents)
 
+  const sellTokensEvents = useEventListener(readContracts, "Vendor", "SellTokens", localProvider, 1);
+  console.log("📟 sellTokensEvents:",sellTokensEvents)
+
   const [ tokenBuyAmount, setTokenBuyAmount ] = useState()
+  const [ tokenSellAmount, setTokenSellAmount ] = useState()
 
   const ethCostToPurchaseTokens = tokenBuyAmount && tokensPerEth &&  parseEther(""+(tokenBuyAmount / parseFloat(tokensPerEth)))
   console.log("ethCostToPurchaseTokens:",ethCostToPurchaseTokens)
+
+  const ethCostToSellTokens = tokenSellAmount && tokensPerEth &&  parseEther(""+(tokenSellAmount / parseFloat(tokensPerEth)))
+  console.log("ethCostToSellTokens:",ethCostToSellTokens)
 
   const [ tokenSendToAddress, setTokenSendToAddress ] = useState()
   const [ tokenSendAmount, setTokenSendAmount ] = useState()
 
   const [ buying, setBuying ] = useState()
+  const [ selling, setSelling ] = useState()
+  const [ approving, setApproving ] = useState()
+  const [ approved, setApproved ] = useState()
 
   let transferDisplay = ""
   if(yourTokenBalance){
@@ -285,35 +295,101 @@ function App(props) {
           </div>
           {transferDisplay}
               <Divider/>
-          <div style={{padding:8, marginTop: 32 ,width: 300, margin:"auto" }}>
-            <Card title="Buy Tokens" extra={<a href="#">code</a>} >
+          <div style={{padding:8, marginTop: 32, textAlign: "center" }}>
+            <Row style={{display: "inline-flex"}}>
+              <Col>
+                <Card title="Buy Tokens" extra={<a href="#">code</a>} >
 
-              <div style={{padding:8}}>
-                {tokensPerEth && tokensPerEth.toNumber()} tokens per ETH
-              </div>
+                  <div style={{padding:8}}>
+                    {tokensPerEth && tokensPerEth.toNumber()} tokens per ETH
+                  </div>
 
-              <div style={{padding:8}}>
-                <Input
-                  style={{textAlign:"center"}}
-                  placeholder={"amount of tokens to buy"}
-                  value={tokenBuyAmount}
-                  onChange={(e)=>{setTokenBuyAmount(e.target.value)}}
-                />
-                <Balance
-                  balance={ethCostToPurchaseTokens}
-                  dollarMultiplier={price}
-                />
-              </div>
+                  <div style={{padding:8}}>
+                    <Input
+                      style={{textAlign:"center"}}
+                      placeholder={"amount of tokens to buy"}
+                      value={tokenBuyAmount}
+                      onChange={(e)=>{setTokenBuyAmount(e.target.value)}}
+                    />
+                    <Balance
+                      balance={ethCostToPurchaseTokens}
+                      dollarMultiplier={price}
+                    />
+                  </div>
 
-              <div style={{padding:8}}>
-                <Button type={"primary"} loading={buying} onClick={async ()=>{
-                  setBuying(true)
-                  await tx( writeContracts.Vendor.buyTokens({value: ethCostToPurchaseTokens}) )
-                  setBuying(false)
-                }}>Buy Tokens</Button>
-              </div>
+                  <div style={{padding:8}}>
+                    <Button type={"primary"} loading={buying} onClick={async ()=>{
+                      setBuying(true)
+                      await tx( writeContracts.Vendor.buyTokens({value: ethCostToPurchaseTokens}) )
+                      setBuying(false)
+                    }}>Buy Tokens</Button>
+                  </div>
 
-            </Card>
+                </Card>
+                
+              </Col>
+              <Col>
+
+                <Card style={{marginLeft:4}} title="Sell Tokens" extra={<a href="#">code</a>} >
+
+                  <div style={{padding:8}}>
+                    {tokensPerEth && tokensPerEth.toNumber()} tokens per ETH
+                  </div>
+
+                  <div style={{padding:8}}>
+                    <Input
+                      style={{textAlign:"center"}}
+                      placeholder={"amount of tokens to sell"}
+                      value={tokenSellAmount}
+                      onChange={(e)=>{setTokenSellAmount(e.target.value)}}
+                      disabled={approved}
+                    />
+                    <Balance
+                      balance={ethCostToSellTokens}
+                      dollarMultiplier={price}
+                    />
+                  </div>
+
+                  <div style={{padding:8}}>
+                    {!approved && <Button type={"primary"} loading={approving} onClick={async ()=>{                      
+                      setApproving(true)
+                      try {
+                        const transaction = await tx( writeContracts.YourToken.approve(writeContracts.Vendor.address, utils.parseEther(tokenSellAmount)) )
+                        if(transaction) {
+                          const receipt = await transaction.wait();
+                          for (const event of receipt.events) {
+                            if (event.event !== 'Approval') {
+                                continue
+                            }
+                            setApproved(true);
+                            break;
+                          }
+                        }
+                      } finally {
+                        setApproving(false);
+                      }
+                    }}>Approve</Button>}
+
+                    {approved && <Button type={"primary"} loading={selling} onClick={async ()=>{
+                      setSelling(true)
+                      const transaction = await tx( writeContracts.Vendor.sellTokens(utils.parseEther(tokenSellAmount)) )
+                      if(transaction) {
+                        const receipt = await transaction.wait();
+                        for (const event of receipt.events) {
+                          if (event.event !== 'SellTokens') {
+                              continue
+                          }
+                          setApproved(false);
+                          break;
+                        }
+                      }
+                      setSelling(false)
+                    }}>Sell Tokens</Button>}
+                  </div>
+
+                </Card>
+              </Col>
+            </Row>
           </div>
 
 
@@ -346,6 +422,33 @@ function App(props) {
             <div>Buy Token Events:</div>
             <List
               dataSource={buyTokensEvents}
+              renderItem={(item) => {
+                return (
+                  <List.Item key={item[0]+item[1]+item.blockNumber}>
+                    <Address
+                        value={item[0]}
+                        ensProvider={mainnetProvider}
+                        fontSize={16}
+                      /> paid
+                      <Balance
+                        balance={item[1]}
+
+                      />ETH to get
+
+                      <Balance
+                        balance={item[2]}
+
+                      />Tokens
+                  </List.Item>
+                )
+              }}
+            />
+          </div>
+
+          <div style={{width:500, margin:"auto",marginTop:64}}>
+            <div>Sell Token Events:</div>
+            <List
+              dataSource={sellTokensEvents}
               renderItem={(item) => {
                 return (
                   <List.Item key={item[0]+item[1]+item.blockNumber}>
